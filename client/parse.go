@@ -18,6 +18,7 @@ import (
 	"github.com/fatih/color"
 )
 
+
 func findSample(body []byte) (input [][]byte, output [][]byte, err error) {
 	irg := regexp.MustCompile(`class="input"[\s\S]*?<pre>([\s\S]*?)</pre>`)
 	org := regexp.MustCompile(`class="output"[\s\S]*?<pre>([\s\S]*?)</pre>`)
@@ -26,14 +27,32 @@ func findSample(body []byte) (input [][]byte, output [][]byte, err error) {
 	if a == nil || b == nil || len(a) != len(b) {
 		return nil, nil, fmt.Errorf("Cannot parse sample with input %v and output %v", len(a), len(b))
 	}
-	startline := regexp.MustCompile(`<[\s\S.]+?>`)
-	endline := regexp.MustCompile(`</[\s\S.]+?>`)
+
+	// old format of codeforces input (lines were separated with <br/> tags)
+	legacyInputPattern := regexp.MustCompile(`(?m)<br\s*/?>`)
+	// new format of codeforces input (each line is wrapped in a <div class="test-example line">)
+	coloredInputPattern := regexp.MustCompile(`<div class="test-example-line[\s\S]*?">([\s\S]*?)</div>`)
+
 	filter := func(src []byte) []byte {
-		src = endline.ReplaceAll(src, []byte("\n"))
+		// match the new format
+		if divPattern.Match(src) {
+			matches := divPattern.FindAllSubmatch(src, -1)
+			var lines []string
+			for _, match := range matches {
+				line := html.UnescapeString(string(match[1]))
+				lines = append(lines, strings.TrimSpace(line))
+			}
+			return []byte(strings.Join(lines, "\n") + "\n")
+		}
+
+		// match the old one
+		src = plainPrePattern.ReplaceAll(src, []byte("\n"))
+		startline := regexp.MustCompile(`<[\s\S.]+?>`)
 		src = startline.ReplaceAll(src, []byte(""))
 		s := html.UnescapeString(string(src))
 		return []byte(strings.TrimSpace(s) + "\n")
 	}
+
 	for i := 0; i < len(a); i++ {
 		input = append(input, filter(a[i][1]))
 		output = append(output, filter(b[i][1]))
